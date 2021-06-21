@@ -1,1 +1,2 @@
 # WetterApp
+Einfache Wetterapp
