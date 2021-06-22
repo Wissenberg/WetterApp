@@ -1,7 +1,8 @@
 from pyowm import OWM
 from pyowm.utils import config
 from tkinter import *
-import time
+from datetime import datetime
+import re
 
 class Settings:
     #Settings for the api request
@@ -11,6 +12,7 @@ class Settings:
 
     #Settings for the ui
     bg = "Grey25"
+    bgLightGrey = "#848484"
     fg = "white"
     fontDefault = ('arial', 20)
     fontData = ('arial', 15)
@@ -33,23 +35,26 @@ class UiMain:
     
     def uiObjects(self):
 #----------------------------------------------------------Current-------------------------------------------------------------------------------------------------------------------
-        self.labelCurrent = Label(master = self.tkWindow, bg = Settings.bg, fg = Settings.fg, text = "Aktuell", anchor = "w",
+        self.currentFrame = Frame(master = self.tkWindow, bg = Settings.bgLightGrey)
+        self.currentFrame.place(x = 5, y = 5, height = 170, width = 940)
+
+        self.labelCurrent = Label(master = self.currentFrame, bg = Settings.bgLightGrey, fg = Settings.fg, text = "Aktuell", anchor = "w",
             font = Settings.fontDefault)
-        self.labelCurrent.place(x = 10, y = 10, width = Settings.defaultLabelLenght, height = Settings.defaultLabelHeight)
+        self.labelCurrent.place(x = 400, y = 10, width = Settings.defaultLabelLenght, height = Settings.defaultLabelHeight)
 
-        self.labelCurrentTemp = Label(master = self.tkWindow, bg = Settings.bg, fg = Settings.fg, text = "Temp", anchor = "w",
+        self.labelCurrentTemp = Label(master = self.currentFrame, bg = Settings.bgLightGrey, fg = Settings.fg, text = "Temp", anchor = "w",
             font = Settings.fontData)
-        self.labelCurrentTemp.place(x = 10, y = 50, width = Settings.defaultLabelLenght, height = Settings.defaultLabelHeight)
+        self.labelCurrentTemp.place(x = 400, y = 50, width = Settings.defaultLabelLenght, height = Settings.defaultLabelHeight)
 
-        self.labelCurrentWind = Label(master = self.tkWindow, bg = Settings.bg, fg = Settings.fg, text = "Wind", anchor = "w",
+        self.labelCurrentWind = Label(master = self.currentFrame, bg = Settings.bgLightGrey, fg = Settings.fg, text = "Wind", anchor = "w",
             font = Settings.fontData)
-        self.labelCurrentWind.place(x = 10, y = 90, width = Settings.defaultLabelLenght, height = Settings.defaultLabelHeight)
+        self.labelCurrentWind.place(x = 400, y = 90, width = Settings.defaultLabelLenght, height = Settings.defaultLabelHeight)
         
-        self.labelCurrentHumidity = Label(master = self.tkWindow, bg = Settings.bg, fg = Settings.fg, text = "Feuchte", anchor = "w",
+        self.labelCurrentHumidity = Label(master = self.currentFrame, bg = Settings.bgLightGrey, fg = Settings.fg, text = "Feuchte", anchor = "w",
             font = Settings.fontData)
-        self.labelCurrentHumidity.place(x = 10, y = 130, width = Settings.defaultLabelLenght, height = Settings.defaultLabelHeight)
+        self.labelCurrentHumidity.place(x = 400, y = 130, width = Settings.defaultLabelLenght, height = Settings.defaultLabelHeight)
         
-        self.labelCurrentRain = Label(master = self.tkWindow, bg = Settings.bg, fg = Settings.fg, text = "Rain", anchor = "w",
+        self.labelCurrentRain = Label(master = self.currentFrame, bg = Settings.bgLightGrey, fg = Settings.fg, text = "Rain", anchor = "w",
             font = Settings.fontData)
         self.labelCurrentRain.place(x = 10, y = 170, width = Settings.defaultLabelLenght, height = Settings.defaultLabelHeight)
 
@@ -76,7 +81,7 @@ class UiMain:
         self.labelDay2Rain.place(x = 10, y = 460, width = Settings.defaultLabelLenght, height = Settings.defaultLabelHeight)
 
 #----------------------------------------------------------Day 3-------------------------------------------------------------------------------------------------------------------
-        self.labelDay3 = Label(master = self.tkWindow, bg = Settings.bg, fg = Settings.fg, text = "Forecast 3:", anchor = "w",
+        self.labelDay3 = Label(master = self.tkWindow, bg = Settings.bg, fg = Settings.fg, text = "Übermorgen:", anchor = "w",
             font = Settings.fontDefault)
         self.labelDay3.place(x = 330, y = 300, width = Settings.defaultLabelLenght, height = Settings.defaultLabelHeight)
         
@@ -256,13 +261,23 @@ class Controller:
     def __init__(self):
         self.weatherManager = WeatherData()
         self.uiManager = UiMain()
+        self.daysUnprocessed = []
+        self.daysProcessed = []
+        
+        self.now = datetime.now()
+        self.daysUnprocessed.append (str(self.now))
+        self.today = self.now.timestamp()
+        self.secondsOneDay = 86400
+        self.suche_1 = "20..."
+        self.suche_2 = " ..............."
 
     def run(self):
         self.weatherManager.main()
+        self.constructDate()
+        self.insertDateInUi()
         self.insertDataInUi()
     
     def insertDataInUi(self):
-        print(self.weatherManager.processedWeatherDataForecast)
         self.uiManager.labelCurrentTemp.config(text = self.weatherManager.processedWeatherDataCurrent[0])
         self.uiManager.labelCurrentWind.config(text = self.weatherManager.processedWeatherDataCurrent[1])
         self.uiManager.labelCurrentHumidity.config(text = self.weatherManager.processedWeatherDataCurrent[2])
@@ -297,6 +312,29 @@ class Controller:
         self.uiManager.labelDay7Wind.config(text = self.weatherManager.processedWeatherDataForecast[32])
         self.uiManager.labelDay7Humidity.config(text = self.weatherManager.processedWeatherDataForecast[33])
         self.uiManager.labelDay7Rain.config(text = self.weatherManager.processedWeatherDataForecast[34])
+    
+    def constructDate(self):
+        self.daysUnprocessed.append (str(datetime.fromtimestamp(self.today + self.secondsOneDay)))
+        self.daysUnprocessed.append (str(datetime.fromtimestamp(self.today + (self.secondsOneDay * 2))))
+        self.daysUnprocessed.append (str(datetime.fromtimestamp(self.today + (self.secondsOneDay * 3))))
+        self.daysUnprocessed.append (str(datetime.fromtimestamp(self.today + (self.secondsOneDay * 4))))
+        self.daysUnprocessed.append (str(datetime.fromtimestamp(self.today + (self.secondsOneDay * 5))))
+        self.daysUnprocessed.append (str(datetime.fromtimestamp(self.today + (self.secondsOneDay * 6))))
+
+        for x in range (0, 7):
+            y = re.sub(self.suche_1, "",self.daysUnprocessed[x])
+            z = re.sub(self.suche_2,"", y)
+            a = z.split("-")
+            self.daysProcessed.append(f"{a[1]}.{a[0]}")
+        
+    def insertDateInUi(self):
+        self.uiManager.labelCurrent.config(text = self.daysProcessed[0])
+        self.uiManager.labelDay2.config(text = self.daysProcessed[1])
+        self.uiManager.labelDay3.config(text = self.daysProcessed[2])
+        self.uiManager.labelDay4.config(text = self.daysProcessed[3])
+        self.uiManager.labelDay5.config(text = self.daysProcessed[4])
+        self.uiManager.labelDay6.config(text = self.daysProcessed[5])
+        self.uiManager.labelDay7.config(text = self.daysProcessed[6])
 
 if __name__ == '__main__':
     mainController = Controller()
