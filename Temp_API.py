@@ -1,14 +1,15 @@
 from pyowm import OWM
-from pyowm.utils import config
 from tkinter import *
 from datetime import datetime
 import re
+import mysql.connector
 
 class Settings:
     #Settings for the api request
     apiKey = "98c9e6829a2efe0ee5a3d10d4d294d59"
     lat = 51.450832
     lon = 7.013056
+    city = "Essen"
 
     #Settings for the ui
     bg = "Grey25"
@@ -18,6 +19,13 @@ class Settings:
     fontData = ('arial', 15)
     defaultLabelLenght = 300
     defaultLabelHeight = 30
+
+    #Settings for the db mapper
+    user = "root"
+    passwd = "test123"
+    port = 3306
+    ipAddress = "127.0.0.1"
+    dbName = "weather_db"
 
     @staticmethod
     def getUrl():
@@ -188,6 +196,49 @@ class UiMain:
             font = Settings.fontData)
         self.labelDay7Rain.place(x = 650, y = 680, width = Settings.defaultLabelLenght, height = Settings.defaultLabelHeight)
 
+class WeatherDataMapping:
+    def __init__(self):
+        self.dbConnect = mysql.connector.connect(host = Settings.ipAddress, port = Settings.port, user = Settings.user, passwd = Settings.passwd, database = Settings.dbName) 
+        self.pointerDB = self.dbConnect.cursor()
+    
+    def getWeatherValues(self,cityName, time, forecastTime):
+        data = []
+        self.pointerDB.execute(f"SELECT temperature, wind, humidity, rain FROM weathervalues INNER JOIN city ON (city_id = city.id) WHERE city.name = '{cityName}' and captured = '{time}' and forecastTime = '{forecastTime}';")
+        for x in self.pointerDB.fetchone():
+            data.append(x)
+        return data
+
+    def getCityName(self, cityName):
+        city = []
+        self.pointerDB.execute(f"SELECT name, lat, lon FROM city WHERE name = '{cityName}';")
+        for x in self.pointerDB.fetchone():
+            city.append(x)
+        return city
+
+    def getCitys(self, cityName):
+        city = []
+        self.pointerDB.execute(f"SELECT * FROM city WHERE name = '{cityName}';")
+        for x in self.pointerDB.fetchone():
+            city.append(x)
+        return city
+
+    def setWeatherData(self, time, forecastTime, cityName, temperature, wind, humidity, rain):
+        self.pointerDB.execute(f"INSERT INTO weathervalues (captured, forecastTime, city_id, temperature, wind, humidity, rain) VALUES ('{time}', '{forecastTime}', (SELECT id FROM city WHERE name = '{cityName}'), '{temperature}', '{wind}', '{humidity}', {rain});")
+        self.dbConnect.commit()
+    
+    def setCountry(self,countryNameEng, countryNameGer,shortedName):
+        self.pointerDB.execute(f"INSERT INTO country(shorted, name_eng, name_ger) VALUES ({shortedName}, {countryNameEng}, {countryNameGer});")
+        self.pointerDB.commit()
+
+    def setStateName(self, stateName, countryName):
+        self.pointerDB.execute(f"INSERT INTO state_name (name, country_id) VALUES ({stateName}, SELECT id FROM country WHERE name = {countryName});")
+        self.pointerDB.commit()
+    
+    def setCityName(self, cityName, stateName, lat, lon):
+        self.pointerDB.execute(f"INSERT INTO city (name, state_id, lat, lon) VALUES ({cityName}, SELECT id FROM state_name WHERE name = {stateName}, lat, lon);")
+        self.pointerDB.commit()        
+        
+
 class WeatherData:
     def __init__(self):
         self.owm = OWM(Settings.apiKey)
@@ -197,8 +248,11 @@ class WeatherData:
         self.processedWeatherDataCurrent = []
         self.processedWeatherDataForecast = []
 
-    def getDataFromOwm(self):
-        self.observation = self.owmManager.one_call(Settings.lat, Settings.lon)
+    def getDataFromOwm(self, dbMapper, city):
+        data = dbMapper.getCityName(city)
+        lat = data[1]
+        lon = data[2]
+        self.observation = self.owmManager.one_call(lat, lon)
     
     def processWeatherDataCurrent(self):
             self.weatherCurrent.append(str(self.observation.current.temperature('celsius').get('temp',None)))
@@ -214,56 +268,46 @@ class WeatherData:
             self.weatherForecast.append(str(self.observation.forecast_daily[x].rain.get('all',None)))
             self.weatherForecast.append("|")
     
-    def getCurrentData(self):
-        self.processedWeatherDataCurrent.append(f"Temperatur: {self.weatherCurrent[0]}°C")
-        self.processedWeatherDataCurrent.append(f"Wind: {self.weatherCurrent[1]}m/s")
-        self.processedWeatherDataCurrent.append(f"Feuchtigkeit: {self.weatherCurrent[2]}%")
-        if self.weatherCurrent[3] == '{}':
+    def getCurrentData(self, dbMapper, daysUnprocessed):
+        mainController.setCurrentDataToDB()
+        currentData = dbMapper.getWeatherValues(Settings.city, daysUnprocessed[0], daysUnprocessed[0])
+        self.processedWeatherDataCurrent.append(f"Temperatur: {currentData[0]}°C")
+        self.processedWeatherDataCurrent.append(f"Wind: {currentData[1]}m/s")
+        self.processedWeatherDataCurrent.append(f"Feuchtigkeit: {currentData[2]}%")
+        if currentData[3] == '{}' or currentData[3] == "None" or currentData[3] == 0 or currentData[3] == "0":
             self.processedWeatherDataCurrent.append(f"Regen: Nein")
         else:
             self.processedWeatherDataCurrent.append(f"Regen: Ja")
     
-    def getForecastData(self, day = 1):
-        if day == 1:
-            basicNr = 0
-        elif day == 2:
-            basicNr = 5
-        elif day == 3:
-            basicNr = 10
-        elif day == 4:
-            basicNr = 15
-        elif day == 5:
-            basicNr = 20
-        elif day == 6:
-            basicNr = 25
-        elif day == 7:
-            basicNr = 30
-        
+    def getForecastData(self, day, dbMapper, daysUnprocessed, daysProcessed):
+        forecastData = dbMapper.getWeatherValues(Settings.city, daysUnprocessed[0], daysProcessed[day])
         self.processedWeatherDataForecast.append(f"Tag: {day}")
-        self.processedWeatherDataForecast.append(f"Temperatur: {self.weatherForecast[basicNr]}°C")
-        self.processedWeatherDataForecast.append(f"Wind: {self.weatherForecast[basicNr + 1]}m/s")
-        self.processedWeatherDataForecast.append(f"Feuchtigkeit: {self.weatherForecast[basicNr + 2]}%")
-        if self.weatherForecast[basicNr + 3] == '{}' or self.weatherForecast[basicNr + 3] == 'None':
+        self.processedWeatherDataForecast.append(f"Temperatur: {forecastData[0]}°C")
+        self.processedWeatherDataForecast.append(f"Wind: {forecastData[1]}m/s")
+        self.processedWeatherDataForecast.append(f"Feuchtigkeit: {forecastData[2]}%")
+        if forecastData[3] == '{}' or forecastData[3] == 'None':
             self.processedWeatherDataForecast.append("Regen: Nein")
         else:
             self.processedWeatherDataForecast.append("Regen: Ja")
         self.processedWeatherDataForecast.append("|")
 
-    def main(self):
-        self.getDataFromOwm()
+    def main(self, dbMapper, daysUnprocessed, daysProcessed):
+        self.getDataFromOwm(dbMapper, Settings.city)
         self.processWeatherDataCurrent()
         self.processWeatherDataForecast()
-        self.getCurrentData()
+        self.getCurrentData(dbMapper, daysUnprocessed)
+        mainController.setForecastDataToDB()
         for x in range (1, 7):
-            self.getForecastData(x)
+            self.getForecastData(x, dbMapper, daysUnprocessed, daysProcessed)
 
 class Controller:
     def __init__(self):
         self.weatherManager = WeatherData()
         self.uiManager = UiMain()
+        self.dbMapper = WeatherDataMapping()
         self.daysUnprocessed = []
         self.daysProcessed = []
-        
+
         self.now = datetime.now()
         self.daysUnprocessed.append (str(self.now))
         self.today = self.now.timestamp()
@@ -272,11 +316,35 @@ class Controller:
         self.suche_2 = " ..............."
 
     def run(self):
-        self.weatherManager.main()
         self.constructDate()
+        self.weatherManager.main(self.dbMapper, self.daysUnprocessed, self.daysProcessed)
         self.insertDateInUi()
         self.insertDataInUi()
     
+    def setCurrentDataToDB(self):
+        temp = self.weatherManager.weatherCurrent[0]
+        wind = self.weatherManager.weatherCurrent[1]
+        humidity = self.weatherManager.weatherCurrent[2]
+        if self.weatherManager.weatherCurrent[3] == "{}" or self.weatherManager.weatherCurrent[3] == "None":
+            rain = 0
+        else:
+            rain = 1
+        self.dbMapper.setWeatherData(self.daysUnprocessed[0],self.daysUnprocessed[0], Settings.city, temp, wind, humidity, rain)
+    
+    def setForecastDataToDB(self):
+        y = 0
+        for x in range(0,35,5):
+            temp = self.weatherManager.weatherForecast[x]
+            wind = self.weatherManager.weatherForecast[x + 1]
+            humidity = self.weatherManager.weatherForecast[x + 2]
+            if self.weatherManager.weatherForecast[x + 3] == "{}" or self.weatherManager.weatherForecast[x + 3] == "None":
+                rain = 0
+            else:
+                rain = 1
+            self.dbMapper.setWeatherData(self.daysUnprocessed[0],self.daysProcessed[y], Settings.city, temp, wind, humidity, rain)
+            y += 1    
+
+
     def insertDataInUi(self):
         self.uiManager.labelCurrentTemp.config(text = self.weatherManager.processedWeatherDataCurrent[0])
         self.uiManager.labelCurrentWind.config(text = self.weatherManager.processedWeatherDataCurrent[1])
